@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cotações Formatura</title>
+
+  <!-- Tailwind CSS para o design -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- Babel para fazer o React (JSX) funcionar direto no HTML sem precisar de Node.js -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <!-- Import Map: Avisa ao navegador onde buscar o React, Firebase e Ícones -->
+  <script type="importmap">
+    {
+      "imports": {
+        "react": "https://esm.sh/react@18.2.0",
+        "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
+        "lucide-react": "https://esm.sh/lucide-react@0.344.0?external=react",
+        
+        "firebase/app": "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js",
+        "firebase/auth": "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js",
+        "firebase/firestore": "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js"
+      }
+    }
+  </script>
+
+  <!-- Estilos Neomorfismo -->
+  <style>
+    body {
+      background-color: #E0E5EC;
+    }
+    .neu-flat { background: #E0E5EC; box-shadow: 9px 9px 16px rgba(163,177,198,0.6), -9px -9px 16px rgba(255,255,255,0.5); border-radius: 1.25rem; }
+    .neu-pressed { background: #E0E5EC; box-shadow: inset 6px 6px 10px 0 rgba(163,177,198,0.7), inset -6px -6px 10px 0 rgba(255,255,255,0.8); border-radius: 0.75rem; border: none; outline: none; }
+    .neu-pressed:focus { box-shadow: inset 8px 8px 12px 0 rgba(163,177,198,0.8), inset -8px -8px 12px 0 rgba(255,255,255,0.9); }
+    .neu-btn { background: #E0E5EC; box-shadow: 6px 6px 12px rgba(163,177,198,0.6), -6px -6px 12px rgba(255,255,255,0.5); border-radius: 0.75rem; transition: all 0.2s ease; cursor: pointer; border: none; font-weight: bold; }
+    .neu-btn:active { box-shadow: inset 4px 4px 8px rgba(163,177,198,0.7), inset -4px -4px 8px rgba(255,255,255,0.8); }
+    .neu-circle { background: #E0E5EC; box-shadow: 4px 4px 8px rgba(163,177,198,0.6), -4px -4px 8px rgba(255,255,255,0.5); border-radius: 50%; cursor: pointer; transition: all 0.2s ease; }
+    .neu-circle:active { box-shadow: inset 3px 3px 6px rgba(163,177,198,0.7), inset -3px -3px 6px rgba(255,255,255,0.8); }
+    .neu-badge-green { background: #E0E5EC; box-shadow: 3px 3px 6px rgba(163,177,198,0.5), -3px -3px 6px rgba(255,255,255,0.6); border-radius: 9999px; border: 1px solid rgba(16, 185, 129, 0.2); }
+    .neu-badge-red { background: #E0E5EC; box-shadow: 3px 3px 6px rgba(163,177,198,0.5), -3px -3px 6px rgba(255,255,255,0.6); border-radius: 9999px; border: 1px solid rgba(239, 68, 68, 0.2); }
+    .table-row-neu { border-bottom: 2px solid #D1D9E6; }
+    .table-row-neu:last-child { border-bottom: none; }
+    
+    /* Custom Scrollbar */
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-track { background: #E0E5EC; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb { background: #a3b1c6; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: #8b9bb4; }
+  </style>
+</head>
+<body>
+  <!-- Onde o React vai injetar o aplicativo -->
+  <div id="root"></div>
+
+  <!-- Código principal em React -->
+  <script type="text/babel" data-type="module">
+    import React, { useState, useMemo, useEffect } from 'react';
+    import { createRoot } from 'react-dom/client';
+    import { 
+      GraduationCap, Wallet, ListTodo, Plus, Edit3, Trash2, 
+      CheckCircle, Circle, TrendingDown, TrendingUp, Tag, X 
+    } from 'lucide-react';
+
+    import { initializeApp } from 'firebase/app';
+    import { getAuth, signInAnonymously } from 'firebase/auth';
+    import { getFirestore, collection, doc, onSnapshot, addDoc, updateDoc, deleteDoc } from 'firebase/firestore';
+
+    // A SUA CONFIGURAÇÃO DO FIREBASE (Intacta)
+    const firebaseConfig = {
+      apiKey: "AIzaSyD0c_4NrQ1RgZUSuHl7orBLHPHFughYQN4",
+      authDomain: "formatura-785b3.firebaseapp.com",
+      projectId: "formatura-785b3",
+      storageBucket: "formatura-785b3.firebasestorage.app",
+      messagingSenderId: "4219252011",
+      appId: "1:4219252011:web:0ce0fb9ed6fc07e034a96e"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db = getFirestore(app);
+
+    function App() {
+      const [items, setItems] = useState([]);
+      const [modalType, setModalType] = useState(null);
+      const [isReady, setIsReady] = useState(false);
+
+      useEffect(() => {
+        signInAnonymously(auth).then(() => {
+          const colRef = collection(db, 'cotacoes');
+          const unsubscribe = onSnapshot(colRef, 
+            (snapshot) => {
+              const data = [];
+              snapshot.forEach(d => data.push({ id: d.id, ...d.data() }));
+              setItems(data);
+              setIsReady(true);
+            }, 
+            (error) => {
+              console.error("Erro ao buscar dados no Firebase:", error);
+              alert("Aviso: Verifique as regras de segurança do seu Firebase Firestore.");
+            }
+          );
+          return () => unsubscribe();
+        }).catch(error => console.error("Erro de Autenticação:", error));
+      }, []);
+
+      const [formData, setFormData] = useState({
+        itemName: '', color: '', quantity: '', city: '', supplier: '', unitPrice: '', isBought: false, notes: ''
+      });
+
+      const [isEditing, setIsEditing] = useState(null);
+      const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+
+      const predefinedItems = [
+        "Adesivo", "Balão Fresco", "Boné", "Caneta", "Cardápio Caseiro",
+        "Chaveiro", "Chinelo", "Copo", "Copo de shot", "Docinho", "Espelho",
+        "Guardanapo de pano", "Guardanapo de papel", "Rasteirinha", "Sousplat", "Tirante"
+      ];
+
+      const groupedItems = useMemo(() => {
+        const groups = {};
+        
+        predefinedItems.forEach(itemName => {
+          groups[itemName.toLowerCase()] = { originalName: itemName, items: [] };
+        });
+
+        items.forEach(item => {
+          const key = item.itemName.trim().toLowerCase();
+          if (!groups[key]) {
+            groups[key] = { originalName: item.itemName, items: [] };
+          }
+          groups[key].items.push(item);
+        });
+
+        const sortedGroups = Object.values(groups).sort((a, b) => a.originalName.localeCompare(b.originalName));
+
+        sortedGroups.forEach(group => {
+          if (group.items.length > 0) {
+            const unitPrices = group.items.map(i => Number(i.unitPrice));
+            group.minPrice = Math.min(...unitPrices);
+            group.maxPrice = Math.max(...unitPrices);
+          }
+        });
+
+        return sortedGroups;
+      }, [items]);
+
+      const totals = useMemo(() => {
+        let spent = 0;
+        let budgeted = 0;
+        let spentItems = [];
+        let budgetedItems = [];
+
+        groupedItems.forEach(group => {
+          if (group.items.length === 0) return; 
+
+          const boughtItem = group.items.find(i => i.isBought);
+          
+          if (boughtItem) {
+            spent += (Number(boughtItem.quantity) * Number(boughtItem.unitPrice));
+            spentItems.push(boughtItem);
+          } else {
+            let cheapest = group.items[0];
+            let lowestTotal = Number(cheapest.quantity) * Number(cheapest.unitPrice);
+            
+            group.items.forEach(i => {
+               const total = Number(i.quantity) * Number(i.unitPrice);
+               if (total < lowestTotal) {
+                  lowestTotal = total;
+                  cheapest = i;
+               }
+            });
+
+            budgeted += lowestTotal;
+            budgetedItems.push(cheapest);
+          }
+        });
+
+        return { spent, budgeted, spentItems, budgetedItems };
+      }, [groupedItems]);
+
+      const formatCurrency = (value) => {
+        return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value || 0);
+      };
+
+      const handleInputChange = (e) => {
+        const { name, value, type, checked } = e.target;
+        setFormData(prev => ({
+          ...prev,
+          [name]: type === 'checkbox' ? checked : value
+        }));
+      };
+
+      const handleSubmit = async (e) => {
+        e.preventDefault();
+        if (!formData.itemName || !formData.unitPrice || !formData.quantity) return;
+
+        const newItem = {
+          ...formData,
+          quantity: Number(formData.quantity),
+          unitPrice: Number(formData.unitPrice),
+          createdAt: new Date().toISOString()
+        };
+
+        const colRef = collection(db, 'cotacoes');
+        
+        try {
+          if (isEditing) {
+            await updateDoc(doc(db, 'cotacoes', isEditing), newItem);
+          } else {
+            await addDoc(colRef, newItem);
+          }
+        } catch (error) {
+          console.error("Erro ao salvar:", error);
+          alert("Erro ao salvar! Verifique sua conexão ou as regras do Firebase.");
+        }
+
+        setIsEditing(null);
+        setFormData({ itemName: '', color: '', quantity: '', city: '', supplier: '', unitPrice: '', isBought: false, notes: '' });
+      };
+
+      const handleEdit = (item) => {
+        setFormData(item);
+        setIsEditing(item.id);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      };
+
+      const handleDelete = async (id) => {
+        if (window.confirm("Tem certeza que deseja apagar esta cotação?")) {
+          await deleteDoc(doc(db, 'cotacoes', id));
+        }
+      };
+
+      const toggleBought = async (id, itemName) => {
+        const targetItem = items.find(i => i.id === id);
+        if (!targetItem) return;
+
+        const newStatus = !targetItem.isBought;
+        await updateDoc(doc(db, 'cotacoes', id), { isBought: newStatus });
+
+        if (newStatus) {
+          const others = items.filter(i => 
+            i.id !== id && 
+            i.itemName.trim().toLowerCase() === itemName.trim().toLowerCase() && 
+            i.isBought
+          );
+          
+          for (const other of others) {
+            await updateDoc(doc(db, 'cotacoes', other.id), { isBought: false });
+          }
+        }
+      };
+
+      return (
+        <div className="min-h-screen font-sans text-gray-600 pb-12">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8">
+            
+            <header className="flex flex-col md:flex-row items-center justify-between mb-8 gap-6">
+              <div className="flex items-center space-x-4">
+                <div className="neu-flat p-4 text-indigo-500 rounded-full flex items-center justify-center relative">
+                  <GraduationCap size={36} strokeWidth={1.5} />
+                  <div className={`absolute top-0 right-0 w-3 h-3 rounded-full border-2 border-[#E0E5EC] ${isReady ? 'bg-green-500' : 'bg-red-500 animate-pulse'}`} title={isReady ? "Online e Salvo na Nuvem" : "Conectando..."}></div>
+                </div>
+                <div>
+                  <h1 className="text-3xl font-extrabold text-gray-700 tracking-tight">Cotações Formatura</h1>
+                  <p className="text-gray-500 text-sm font-medium">Comparativo e Gestão de Fornecedores</p>
+                </div>
+              </div>
+
+              <div className="flex space-x-6 w-full md:w-auto">
+                <div 
+                  onClick={() => totals.spentItems.length > 0 && setModalType('spent')}
+                  className={`neu-flat px-6 py-4 flex-1 md:w-56 flex flex-col items-center justify-center border-t-4 border-green-500 transition-transform ${totals.spentItems.length > 0 ? 'cursor-pointer hover:scale-105' : 'opacity-70'}`}
+                >
+                  <span className="text-xs uppercase tracking-wider text-gray-500 font-bold mb-1 flex items-center">
+                    <Wallet size={14} className="mr-1.5" /> Valor Já Gasto
+                  </span>
+                  <span className="text-2xl font-black text-green-600">{formatCurrency(totals.spent)}</span>
+                  <span className="text-[10px] text-green-500 mt-1 font-bold bg-green-100 px-2 py-0.5 rounded-full">
+                    {totals.spentItems.length} {totals.spentItems.length === 1 ? 'item' : 'itens'}
+                  </span>
+                </div>
+                
+                <div 
+                  onClick={() => totals.budgetedItems.length > 0 && setModalType('budgeted')}
+                  className={`neu-flat px-6 py-4 flex-1 md:w-56 flex flex-col items-center justify-center border-t-4 border-amber-400 transition-transform ${totals.budgetedItems.length > 0 ? 'cursor-pointer hover:scale-105' : 'opacity-70'}`}
+                >
+                  <span className="text-xs uppercase tracking-wider text-gray-500 font-bold mb-1 flex items-center">
+                    <ListTodo size={14} className="mr-1.5" /> Previsão Restante
+                  </span>
+                  <span className="text-2xl font-black text-amber-500">{formatCurrency(totals.budgeted)}</span>
+                  <span className="text-[10px] text-gray-400 mt-1 leading-tight text-center">Clique para ver a lista</span>
+                </div>
+              </div>
+            </header>
+
+            <div className="neu-flat p-6 mb-8 relative z-10">
+              <h2 className="text-lg font-bold text-gray-700 mb-5 flex items-center border-b border-gray-300 pb-3">
+                {isEditing ? <Edit3 size={20} className="mr-2 text-indigo-500" /> : <Plus size={20} className="mr-2 text-indigo-500" />}
+                {isEditing ? 'Atualizar Cotação' : 'Adicionar Nova Cotação'}
+              </h2>
+              
+              <form onSubmit={handleSubmit} className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
+                  <div className="md:col-span-3 relative">
+                    <label className="block text-xs font-bold text-gray-500 mb-1 pl-1 uppercase tracking-wide">Item de Compra *</label>
+                    <div className="relative">
+                      <input type="text" name="itemName" value={formData.itemName} 
+                        onChange={(e) => { handleInputChange(e); setIsDropdownOpen(true); }} 
+                        onFocus={() => setIsDropdownOpen(true)}
+                        onBlur={() => setTimeout(() => setIsDropdownOpen(false), 200)}
+                        required autoComplete="off"
+                        className="neu-pressed w-full px-4 py-2.5 text-sm text-gray-700 font-medium" placeholder="Selecione ou digite..." />
+                      
+                      {isDropdownOpen && (
+                        <ul className="absolute z-50 w-full mt-2 max-h-56 overflow-y-auto neu-flat p-2 bg-[#E0E5EC] border border-gray-300 border-opacity-40">
+                          {predefinedItems
+                            .filter(item => item.toLowerCase().includes(formData.itemName.toLowerCase()))
+                            .map((item, index) => (
+                              <li 
+                                key={index}
+                                onClick={() => {
+                                  setFormData(prev => ({ ...prev, itemName: item }));
+                                  setIsDropdownOpen(false);
+                                }}
+                                className="px-4 py-2.5 text-sm text-gray-600 cursor-pointer hover:bg-[#d1d9e6] rounded-lg transition-colors font-medium flex items-center"
+                              >
+                                <Tag size={14} className="mr-2 text-indigo-400" />
+                                {item}
+                              </li>
+                            ))}
+                        </ul>
+                      )}
+                    </div>
+                  </div>
+                  <div className="md:col-span-2">
+                    <label className="block text-xs font-bold text-gray-500 mb-1 pl-1 uppercase tracking-wide">Cor Desejada</label>
+                    <input type="text" name="color" value={formData.color} onChange={handleInputChange} 
+                      className="neu-pressed w-full px-4 py-2.5 text-sm text-gray-700" placeholder="Ex: Transparente" />
+                  </div>
+                  <div className="md:col-span-2">
+                    <label className="block text-xs font-bold text-gray-500 mb-1 pl-1 uppercase tracking-wide">Qtd. *</label>
+                    <input type="number" name="quantity" value={formData.quantity} onChange={handleInputChange} required min="1"
+                      className="neu-pressed w-full px-4 py-2.5 text-sm text-gray-700" placeholder="0" />
+                  </div>
+                  <div className="md:col-span-3">
+                    <label className="block text-xs font-bold text-gray-500 mb-1 pl-1 uppercase tracking-wide">Fornecedor</label>
+                    <input type="text" name="supplier" value={formData.supplier} onChange={handleInputChange}
+                      className="neu-pressed w-full px-4 py-2.5 text-sm text-gray-700" placeholder="Nome da empresa" />
+                  </div>
+                  <div className="md:col-span-2">
+                    <label className="block text-xs font-bold text-gray-500 mb-1 pl-1 uppercase tracking-wide">Localidade</label>
+                    <input type="text" name="city" value={formData.city} onChange={handleInputChange}
+                      className="neu-pressed w-full px-4 py-2.5 text-sm text-gray-700" placeholder="Cidade/Estado" />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
+                  <div className="md:col-span-2">
+                    <label className="block text-xs font-bold text-gray-500 mb-1 pl-1 uppercase tracking-wide">Preço Unid. (R$) *</label>
+                    <input type="number" step="0.01" name="unitPrice" value={formData.unitPrice} onChange={handleInputChange} required
+                      className="neu-pressed w-full px-4 py-2.5 text-sm text-gray-700 font-bold" placeholder="0.00" />
+                  </div>
+                  <div className="md:col-span-5">
+                    <label className="block text-xs font-bold text-gray-500 mb-1 pl-1 uppercase tracking-wide">Observações / Qualidade</label>
+                    <input type="text" name="notes" value={formData.notes} onChange={handleInputChange}
+                      className="neu-pressed w-full px-4 py-2.5 text-sm text-gray-700" placeholder="Detalhes, material, frete..." />
+                  </div>
+                  <div className="md:col-span-2 flex flex-col justify-end pb-0">
+                    <label className="block text-xs font-bold text-transparent mb-1 pl-1 select-none hidden md:block">Ação</label>
+                    <button 
+                      type="button" 
+                      onClick={() => setFormData(prev => ({ ...prev, isBought: !prev.isBought }))}
+                      className={`neu-btn w-full h-[42px] flex items-center justify-center space-x-2 transition-all duration-300 ${formData.isBought ? 'text-green-600' : 'text-gray-400'}`}
+                      style={formData.isBought ? { boxShadow: 'inset 4px 4px 8px rgba(163,177,198,0.7), inset -4px -4px 8px rgba(255,255,255,0.8)' } : {}}
+                    >
+                      {formData.isBought ? <CheckCircle size={18} /> : <Circle size={18} />}
+                      <span className="font-bold text-xs uppercase tracking-wide">
+                        {formData.isBought ? 'Comprado' : 'Orçamento'}
+                      </span>
+                    </button>
+                  </div>
+                  <div className="md:col-span-3 flex space-x-3 items-end">
+                    <button type="submit" className="neu-btn w-full h-[42px] text-indigo-600 uppercase text-xs tracking-wider">
+                      {isEditing ? 'Guardar' : 'Registar'}
+                    </button>
+                    {isEditing && (
+                      <button type="button" onClick={() => { setIsEditing(null); setFormData({itemName: '', color: '', quantity: '', city: '', supplier: '', unitPrice: '', isBought: false, notes: ''}); }}
+                        className="neu-btn w-full py-2.5 text-gray-500 uppercase text-xs tracking-wider">
+                        Cancelar
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </form>
+            </div>
+
+            <div className="neu-flat overflow-hidden rounded-2xl">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse min-w-[1100px]">
+                  <thead>
+                    <tr className="text-gray-500 uppercase text-[10px] tracking-widest bg-[#d6dde7] bg-opacity-40">
+                      <th className="p-4 font-extrabold w-12 text-center">Compra</th>
+                      <th className="p-4 font-extrabold">Fornecedor</th>
+                      <th className="p-4 font-extrabold">Localidade</th>
+                      <th className="p-4 font-extrabold">Cor Desejada</th>
+                      <th className="p-4 font-extrabold text-right">Qtd</th>
+                      <th className="p-4 font-extrabold text-right">Preço Unit.</th>
+                      <th className="p-4 font-extrabold text-right">Preço Total</th>
+                      <th className="p-4 font-extrabold text-center w-32">Análise</th>
+                      <th className="p-4 font-extrabold w-48">Observações</th>
+                      <th className="p-4 font-extrabold text-center w-24">Ações</th>
+                    </tr>
+                  </thead>
+                  <tbody className="text-sm">
+                    {groupedItems.map((group, groupIndex) => (
+                      <React.Fragment key={groupIndex}>
+                        <tr className="bg-[#D1D9E6] bg-opacity-50 border-y border-gray-300">
+                          <td colSpan={10} className="px-5 py-3 font-black text-gray-700 text-base flex items-center">
+                            <Tag size={18} className="mr-2 text-indigo-500" />
+                            {group.originalName}
+                            <span className={`ml-3 text-xs font-semibold px-2.5 py-1 rounded-full ${group.items.length === 0 ? 'bg-amber-100 text-amber-600' : 'bg-gray-200 text-gray-500'}`}>
+                              {group.items.length} cotações
+                            </span>
+                          </td>
+                        </tr>
+
+                        {group.items.length === 0 ? (
+                          <tr className="table-row-neu hover:bg-[#d5dbe4] hover:bg-opacity-40 transition-colors">
+                            <td colSpan={10} className="p-5 text-center text-gray-500 text-sm font-medium">
+                              Nenhum fornecedor registado.
+                            </td>
+                          </tr>
+                        ) : (
+                          group.items.map((item) => {
+                            const total = item.quantity * item.unitPrice;
+                            const isBestPrice = Number(item.unitPrice) === group.minPrice && group.items.length > 1;
+                            const isWorstPrice = Number(item.unitPrice) === group.maxPrice && group.items.length > 1 && group.minPrice !== group.maxPrice;
+                            const isGroupResolved = group.items.some(i => i.isBought);
+
+                            let rowClass = "table-row-neu transition-all duration-300 ";
+                            if (isGroupResolved) {
+                              if (item.isBought) {
+                                rowClass += "bg-green-300 bg-opacity-50 hover:bg-green-400 hover:bg-opacity-60"; 
+                              } else {
+                                rowClass += "bg-red-300 bg-opacity-40 opacity-75 hover:opacity-100 grayscale-[10%]"; 
+                              }
+                            } else {
+                              rowClass += "hover:bg-[#d5dbe4] hover:bg-opacity-40";
+                            }
+
+                            return (
+                              <tr key={item.id} className={rowClass}>
+                                <td className="p-3 text-center">
+                                  <button onClick={() => toggleBought(item.id, item.itemName)} className={`neu-circle p-2 flex items-center justify-center mx-auto transition-colors ${item.isBought ? 'text-green-600 bg-green-200 shadow-inner' : 'text-gray-400'}`} title="Marcar/Desmarcar Compra">
+                                    {item.isBought ? <CheckCircle size={20} fill="currentColor" className="text-green-500" /> : <Circle size={20} />}
+                                  </button>
+                                </td>
+                                <td className="p-3 font-bold text-gray-700">{item.supplier || '-'}</td>
+                                <td className="p-3 text-gray-600 text-xs">{item.city || '-'}</td>
+                                <td className="p-3 text-gray-600">{item.color || '-'}</td>
+                                <td className="p-3 text-right font-medium text-gray-600">{item.quantity}</td>
+                                <td className="p-3 text-right text-gray-600">{formatCurrency(item.unitPrice)}</td>
+                                <td className="p-3 text-right font-black text-gray-700">{formatCurrency(total)}</td>
+                                
+                                <td className="p-3 text-center">
+                                  {isBestPrice && (
+                                    <div className="neu-badge-green px-3 py-1.5 flex items-center justify-center text-green-600 text-[10px] font-bold uppercase tracking-wide mx-auto w-max">
+                                      <TrendingDown size={12} className="mr-1" /> Melhor Preço
+                                    </div>
+                                  )}
+                                  {isWorstPrice && (
+                                    <div className="neu-badge-red px-3 py-1.5 flex items-center justify-center text-red-500 text-[10px] font-bold uppercase tracking-wide mx-auto w-max">
+                                      <TrendingUp size={12} className="mr-1" /> Pior Preço
+                                    </div>
+                                  )}
+                                  {!isBestPrice && !isWorstPrice && <span className="text-gray-400 text-xs">-</span>}
+                                </td>
+
+                                <td className="p-3 text-xs text-gray-500 italic truncate max-w-[200px]" title={item.notes}>
+                                  {item.notes || '-'}
+                                </td>
+
+                                <td className="p-3">
+                                  <div className="flex justify-center space-x-4">
+                                    <button onClick={() => handleEdit(item)} className="text-gray-400 hover:text-indigo-600 transition-colors" title="Editar">
+                                      <Edit3 size={18} />
+                                    </button>
+                                    <button onClick={() => handleDelete(item.id)} className="text-gray-400 hover:text-red-500 transition-colors" title="Remover">
+                                      <Trash2 size={18} />
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })
+                        )}
+                      </React.Fragment>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {modalType && (
+              <div className="fixed inset-0 bg-gray-900 bg-opacity-40 backdrop-blur-sm z-50 flex justify-center items-center p-4">
+                <div className="neu-flat p-6 w-full max-w-3xl max-h-[85vh] flex flex-col relative" style={{ background: '#E0E5EC' }}>
+                  <button onClick={() => setModalType(null)} className="neu-circle p-2 absolute top-4 right-4 text-gray-500 hover:text-red-500 transition-colors">
+                    <X size={20} />
+                  </button>
+
+                  <div className="mb-6 pr-8">
+                    <h2 className="text-2xl font-extrabold text-gray-700 flex items-center">
+                      {modalType === 'spent' ? (
+                        <><Wallet className="mr-3 text-green-500" size={28} /> Extrato de Compras Fechadas</>
+                      ) : (
+                        <><ListTodo className="mr-3 text-amber-500" size={28} /> Lista de Previsão de Orçamento</>
+                      )}
+                    </h2>
+                    <p className="text-sm text-gray-500 mt-1 font-medium">
+                      {modalType === 'spent' 
+                        ? 'Estes são os fornecedores que registou como "Comprado" e que formam o seu gasto total.' 
+                        : 'Esta é a simulação do seu orçamento com base na opção MAIS BARATA dos itens que ainda não fechou negócio.'}
+                    </p>
+                  </div>
+
+                  <div className="overflow-y-auto flex-1 pr-2 rounded-xl">
+                    <div className="space-y-4">
+                      {(modalType === 'spent' ? totals.spentItems : totals.budgetedItems).map((item) => (
+                        <div key={item.id} className="neu-pressed p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                          <div className="flex items-center gap-3">
+                            <div className={`p-2 rounded-full ${modalType === 'spent' ? 'bg-green-100 text-green-600' : 'bg-amber-100 text-amber-600'}`}>
+                              <Tag size={16} />
+                            </div>
+                            <div>
+                              <h4 className="font-bold text-gray-700">{item.itemName}</h4>
+                              <p className="text-xs text-gray-500">{item.supplier || 'Fornecedor não informado'} • {item.quantity} un.</p>
+                            </div>
+                          </div>
+                          <div className="text-right w-full sm:w-auto">
+                            <p className="font-black text-gray-700 text-lg">{formatCurrency(item.quantity * item.unitPrice)}</p>
+                            <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">{formatCurrency(item.unitPrice)} cada</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="mt-6 pt-4 border-t border-gray-300 border-opacity-50 flex justify-between items-center">
+                    <span className="font-bold text-gray-500 uppercase tracking-widest text-xs">Total desta lista:</span>
+                    <span className={`text-2xl font-black ${modalType === 'spent' ? 'text-green-600' : 'text-amber-500'}`}>
+                      {formatCurrency(modalType === 'spent' ? totals.spent : totals.budgeted)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+          </div>
+        </div>
+      );
+    }
+
+    // Inicializa a renderização do React na página HTML
+    const root = createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
