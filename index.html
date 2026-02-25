@@ -57,7 +57,7 @@
     import { createRoot } from 'react-dom/client';
     import { 
       GraduationCap, Wallet, ListTodo, Plus, Edit3, Trash2, 
-      CheckCircle, Circle, TrendingDown, TrendingUp, Tag, X, Search, Info
+      CheckCircle, Circle, TrendingDown, TrendingUp, Tag, X, Search, Info, AlertTriangle
     } from 'lucide-react';
 
     import { initializeApp } from 'firebase/app';
@@ -77,14 +77,50 @@
     const auth = getAuth(app);
     const db = getFirestore(app);
 
+    // Lista padrão de categorias
+    const defaultCategories = [
+      "Adesivo", "Balão Fresco", "Boné", "Caneta", "Cardápio Caseiro",
+      "Chaveiro", "Chinelo", "Copo", "Copo de shot", "Docinho", "Espelho",
+      "Guardanapo de pano", "Guardanapo de papel", "Rasteirinha", "Sousplat", "Tirante"
+    ];
+
     function App() {
       const [items, setItems] = useState([]);
       const [modalType, setModalType] = useState(null);
       const [isReady, setIsReady] = useState(false);
-      const [searchTerm, setSearchTerm] = useState(''); // Novo state para busca
-      const [toastMessage, setToastMessage] = useState(null); // Novo state para alertas UI
+      const [searchTerm, setSearchTerm] = useState(''); 
+      const [toastMessage, setToastMessage] = useState(null); 
       
+      // Estado para o Modal Customizado de Confirmação (substitui o window.confirm)
+      const [confirmDialog, setConfirmDialog] = useState({ isOpen: false, title: '', message: '', action: null });
+      
+      // Novo Estado para a Tela de Splash (Abertura)
+      const [showSplash, setShowSplash] = useState(true);
+
+      // Estado para as categorias dinâmicas
+      const [categoriesList, setCategoriesList] = useState(() => {
+        const saved = localStorage.getItem('@formatura-categorias');
+        if (saved) return JSON.parse(saved);
+        return defaultCategories;
+      });
+
       const formRef = useRef(null);
+
+      // Salva as categorias no LocalStorage sempre que houver mudança
+      useEffect(() => {
+        localStorage.setItem('@formatura-categorias', JSON.stringify(categoriesList));
+      }, [categoriesList]);
+
+      // Efeito para esconder a tela de Splash após 2.5 segundos
+      useEffect(() => {
+        const timer = setTimeout(() => setShowSplash(false), 2500);
+        return () => clearTimeout(timer);
+      }, []);
+
+      const showToast = (message, type = 'success') => {
+        setToastMessage({ message, type });
+        setTimeout(() => setToastMessage(null), 5000);
+      };
 
       useEffect(() => {
         signInAnonymously(auth).then(() => {
@@ -98,17 +134,19 @@
             }, 
             (error) => {
               console.error("Erro Firebase:", error);
-              showToast("Erro ao conectar ao banco de dados.", "error");
+              showToast("Erro ao conectar ao banco de dados (Regras Firestore).", "error");
             }
           );
           return () => unsubscribe();
-        }).catch(error => console.error("Erro Auth:", error));
+        }).catch(error => {
+          console.error("Erro Auth:", error);
+          if (error.code === 'auth/configuration-not-found' || error.code === 'auth/operation-not-allowed') {
+            showToast("Erro: Ative o método de login 'Anônimo' no painel do Firebase Authentication!", "error");
+          } else {
+            showToast(`Erro de Autenticação: ${error.message}`, "error");
+          }
+        });
       }, []);
-
-      const showToast = (message, type = 'success') => {
-        setToastMessage({ message, type });
-        setTimeout(() => setToastMessage(null), 3000);
-      };
 
       const [formData, setFormData] = useState({
         itemName: '', color: '', quantity: '', city: '', supplier: '', unitPrice: '', isBought: false, notes: ''
@@ -117,25 +155,20 @@
       const [isEditing, setIsEditing] = useState(null);
       const [isDropdownOpen, setIsDropdownOpen] = useState(false);
 
-      const predefinedItems = [
-        "Adesivo", "Balão Fresco", "Boné", "Caneta", "Cardápio Caseiro",
-        "Chaveiro", "Chinelo", "Copo", "Copo de shot", "Docinho", "Espelho",
-        "Guardanapo de pano", "Guardanapo de papel", "Rasteirinha", "Sousplat", "Tirante"
-      ];
-
-      // Lógica de agrupamento com filtro de busca aplicado
       const groupedItems = useMemo(() => {
         const groups = {};
         
-        predefinedItems.forEach(itemName => {
+        categoriesList.forEach(itemName => {
           groups[itemName.toLowerCase()] = { originalName: itemName, items: [] };
         });
 
-        // Aplicar o filtro de busca antes de agrupar
         const filteredItems = items.filter(item => {
           const searchLower = searchTerm.toLowerCase();
           return item.itemName.toLowerCase().includes(searchLower) || 
-                 (item.supplier && item.supplier.toLowerCase().includes(searchLower));
+                 (item.supplier && item.supplier.toLowerCase().includes(searchLower)) ||
+                 (item.city && item.city.toLowerCase().includes(searchLower)) ||
+                 (item.color && item.color.toLowerCase().includes(searchLower)) ||
+                 (item.notes && item.notes.toLowerCase().includes(searchLower));
         });
 
         filteredItems.forEach(item => {
@@ -146,10 +179,10 @@
           groups[key].items.push(item);
         });
 
-        // Remover grupos vazios se estivermos buscando algo
         let sortedGroups = Object.values(groups).sort((a, b) => a.originalName.localeCompare(b.originalName));
         if (searchTerm) {
-          sortedGroups = sortedGroups.filter(g => g.items.length > 0);
+          const searchLower = searchTerm.toLowerCase();
+          sortedGroups = sortedGroups.filter(g => g.items.length > 0 || g.originalName.toLowerCase().includes(searchLower));
         }
 
         sortedGroups.forEach(group => {
@@ -161,16 +194,14 @@
         });
 
         return sortedGroups;
-      }, [items, searchTerm]);
+      }, [items, searchTerm, categoriesList]);
 
-      // Totais calculados apenas com os itens gerais (ignorando busca)
       const totals = useMemo(() => {
         let spent = 0;
         let budgeted = 0;
         let spentItems = [];
         let budgetedItems = [];
 
-        // Precisamos agrupar sem filtro para o cálculo total sempre estar correto
         const rawGroups = {};
         items.forEach(item => {
           const key = item.itemName.trim().toLowerCase();
@@ -239,8 +270,15 @@
             await addDoc(colRef, newItem);
             showToast("Nova cotação adicionada!");
           }
+
+          // Adiciona nova categoria à lista dinâmica se ela não existir
+          const newCat = formData.itemName.trim();
+          if (!categoriesList.some(c => c.toLowerCase() === newCat.toLowerCase())) {
+            setCategoriesList(prev => [...prev, newCat]);
+          }
+
         } catch (error) {
-          showToast("Erro ao salvar dados.", "error");
+          showToast("Erro ao salvar dados. Verifique sua conexão.", "error");
         }
 
         setIsEditing(null);
@@ -255,13 +293,47 @@
         }
       };
 
-      const handleDelete = async (id) => {
-        // Substituindo o confirm feio do navegador por uma flag de UX simplificada
-        // Em um app real, faríamos um modal de confirmação.
-        if (window.confirm("Apagar esta cotação permanentemente?")) {
-          await deleteDoc(doc(db, 'cotacoes', id));
-          showToast("Cotação removida.");
+      // Nova Função para Deletar um Item (Sem window.confirm)
+      const handleDelete = (id) => {
+        setConfirmDialog({
+          isOpen: true,
+          title: "Excluir Cotação",
+          message: "Tem certeza que deseja apagar esta cotação permanentemente? Esta ação não pode ser desfeita.",
+          action: async () => {
+            try {
+              await deleteDoc(doc(db, 'cotacoes', id));
+              showToast("Cotação removida com sucesso.");
+            } catch (error) {
+              showToast("Erro ao remover cotação.", "error");
+            }
+          }
+        });
+      };
+
+      // Nova Função para Deletar uma Categoria Inteira
+      const handleDeleteCategory = (categoryName) => {
+        // Verifica se a categoria possui itens antes de permitir a exclusão
+        const itemsInCategory = items.filter(i => i.itemName.trim().toLowerCase() === categoryName.trim().toLowerCase());
+        
+        if (itemsInCategory.length > 0) {
+          showToast(`Não é possível excluir. Remova as ${itemsInCategory.length} cotações de "${categoryName}" primeiro.`, "error");
+          return;
         }
+
+        setConfirmDialog({
+          isOpen: true,
+          title: "Excluir Categoria",
+          message: `Tem certeza que deseja remover a categoria vazia "${categoryName}" da sua lista?`,
+          action: async () => {
+            try {
+              // Remove a categoria da lista local de categorias (já que não há mais itens)
+              setCategoriesList(prev => prev.filter(c => c.toLowerCase() !== categoryName.trim().toLowerCase()));
+              showToast(`Categoria "${categoryName}" removida com sucesso.`);
+            } catch (error) {
+              showToast("Erro ao remover a categoria.", "error");
+            }
+          }
+        });
       };
 
       const toggleBought = async (id, itemName) => {
@@ -285,9 +357,60 @@
         }
       };
 
+      // Renderização da Tela de Splash (Abertura)
+      if (showSplash) {
+        return (
+          <div className="min-h-screen flex flex-col items-center justify-center bg-[#E0E5EC]">
+             <div className="neu-circle p-10 mb-8 animate-bounce text-indigo-500 shadow-xl">
+               <GraduationCap size={72} strokeWidth={1.5} />
+             </div>
+             <h1 className="text-4xl md:text-5xl font-black text-gray-800 tracking-tight text-center px-4">
+               Cotações Formatura
+             </h1>
+             <p className="text-gray-500 mt-4 font-bold tracking-widest uppercase text-sm">Carregando painel...</p>
+             <div className="mt-8 flex gap-3">
+               <div className="w-3.5 h-3.5 rounded-full bg-indigo-400 animate-pulse"></div>
+               <div className="w-3.5 h-3.5 rounded-full bg-indigo-500 animate-pulse" style={{ animationDelay: '0.2s' }}></div>
+               <div className="w-3.5 h-3.5 rounded-full bg-indigo-600 animate-pulse" style={{ animationDelay: '0.4s' }}></div>
+             </div>
+          </div>
+        );
+      }
+
       return (
         <div className="min-h-screen font-sans text-gray-700 pb-12 relative">
           
+          {/* Custom Confirm Modal */}
+          {confirmDialog.isOpen && (
+            <div className="fixed inset-0 bg-gray-900 bg-opacity-60 backdrop-blur-sm z-[60] flex justify-center items-center p-4">
+              <div className="neu-flat p-6 w-full max-w-sm flex flex-col items-center text-center animate-in fade-in zoom-in duration-200" style={{ background: '#E0E5EC' }}>
+                 <div className="bg-red-100 text-red-500 p-3 rounded-full mb-4">
+                   <AlertTriangle size={32} />
+                 </div>
+                 <h3 className="text-xl font-bold text-gray-800 mb-2">{confirmDialog.title}</h3>
+                 <p className="text-sm text-gray-600 mb-6 font-medium">{confirmDialog.message}</p>
+                 <div className="flex w-full gap-4">
+                   <button 
+                     onClick={() => setConfirmDialog({ isOpen: false, title: '', message: '', action: null })} 
+                     className="neu-btn flex-1 py-3 text-gray-600 font-bold hover:text-gray-800"
+                   >
+                     Cancelar
+                   </button>
+                   <button 
+                     onClick={() => { 
+                       confirmDialog.action(); 
+                       setConfirmDialog({ isOpen: false, title: '', message: '', action: null }); 
+                     }} 
+                     className="neu-btn flex-1 py-3 text-red-600 font-bold bg-red-50 hover:bg-red-100"
+                     style={{ boxShadow: 'inset 4px 4px 8px rgba(163,177,198,0.7), inset -4px -4px 8px rgba(255,255,255,0.8)' }}
+                   >
+                     Sim, Excluir
+                   </button>
+                 </div>
+              </div>
+            </div>
+          )}
+
           {/* Toast Notification */}
           {toastMessage && (
             <div className={`fixed top-4 right-4 z-50 px-6 py-3 rounded-xl shadow-lg transition-all duration-300 flex items-center gap-3 font-bold text-sm
@@ -360,12 +483,13 @@
                       
                       {isDropdownOpen && (
                         <ul className="absolute z-50 w-full mt-2 max-h-56 overflow-y-auto neu-flat p-2 bg-[#E0E5EC] border border-gray-300 border-opacity-40">
-                          {predefinedItems
+                          {categoriesList
                             .filter(item => item.toLowerCase().includes(formData.itemName.toLowerCase()))
                             .map((item, index) => (
                               <li 
                                 key={index}
-                                onClick={() => {
+                                onMouseDown={(e) => {
+                                  e.preventDefault(); // Previne que o input perca o foco antes de setar o valor
                                   setFormData(prev => ({ ...prev, itemName: item }));
                                   setIsDropdownOpen(false);
                                 }}
@@ -493,17 +617,27 @@
                       groupedItems.map((group, groupIndex) => (
                         <React.Fragment key={groupIndex}>
                           <tr className="bg-[#D1D9E6] bg-opacity-70 border-y border-gray-300">
-                            <td colSpan={10} className="px-5 py-3 font-black text-gray-800 text-base flex items-center">
-                              <Tag size={18} className="mr-2 text-indigo-600" />
-                              {group.originalName}
-                              <span className={`ml-3 text-xs font-bold px-2.5 py-1 rounded-full ${group.items.length === 0 ? 'bg-amber-200 text-amber-700' : 'bg-[#E0E5EC] shadow-inner text-gray-600'}`}>
-                                {group.items.length} cotações
-                              </span>
-                            </td>
-                          </tr>
+                            {/* CABEÇALHO DA CATEGORIA COM BOTÃO DE EXCLUIR */}
+                            <td colSpan={10} className="px-5 py-3 flex items-center justify-between">
+                              <div className="font-black text-gray-800 text-base flex items-center">
+                                <Tag size={18} className="mr-2 text-indigo-600" />
+                                {group.originalName}
+                                <span className={`ml-3 text-xs font-bold px-2.5 py-1 rounded-full ${group.items.length === 0 ? 'bg-amber-200 text-amber-700' : 'bg-[#E0E5EC] shadow-inner text-gray-600'}`}>
+                              {group.items.length} cotações
+                            </span>
+                          </div>
+                          <button 
+                            onClick={() => handleDeleteCategory(group.originalName)} 
+                            className="text-gray-400 hover:text-red-500 transition-colors p-1.5 rounded-full hover:bg-red-100 flex items-center" 
+                            title="Excluir Categoria"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </td>
+                      </tr>
 
-                          {group.items.length === 0 ? (
-                            <tr className="table-row-neu">
+                      {group.items.length === 0 ? (
+                        <tr className="table-row-neu">
                               <td colSpan={10} className="p-5 text-center text-gray-500 text-sm font-medium">
                                 Nenhum fornecedor registado.
                               </td>
@@ -563,6 +697,7 @@
                                       <button onClick={() => handleEdit(item)} className="text-gray-500 hover:text-indigo-600 transition-colors" title="Editar">
                                         <Edit3 size={18} />
                                       </button>
+                                      {/* BOTÃO DE EXCLUIR ITEM INDIVIDUAL */}
                                       <button onClick={() => handleDelete(item.id)} className="text-gray-500 hover:text-red-600 transition-colors" title="Remover">
                                         <Trash2 size={18} />
                                       </button>
@@ -580,7 +715,7 @@
               </div>
             </div>
 
-            {/* Modal */}
+            {/* Modal de Extrato/Resumo */}
             {modalType && (
               <div className="fixed inset-0 bg-gray-900 bg-opacity-50 backdrop-blur-md z-50 flex justify-center items-center p-4">
                 <div className="neu-flat p-6 w-full max-w-3xl max-h-[85vh] flex flex-col relative" style={{ background: '#E0E5EC' }}>
