@@ -91,7 +91,8 @@
     import { createRoot } from 'react-dom/client';
     import { 
       GraduationCap, Wallet, ListTodo, Plus, Edit3, Trash2, 
-      CheckCircle, Circle, TrendingDown, TrendingUp, Tag, X, Search, Info, AlertTriangle, Moon, Sun, Printer, ChevronRight
+      CheckCircle, Circle, TrendingDown, TrendingUp, Tag, X, Search, Info, AlertTriangle, Moon, Sun, Printer, ChevronRight,
+      ArrowUp, ArrowDown, ArrowUpDown // Adicionado os ícones de ordenação
     } from 'lucide-react';
 
     import { initializeApp } from 'firebase/app';
@@ -125,6 +126,9 @@
       const [toastMessage, setToastMessage] = useState(null); 
       const [confirmDialog, setConfirmDialog] = useState({ isOpen: false, title: '', message: '', action: null });
       const [showSplash, setShowSplash] = useState(true);
+      
+      // Controle de Ordenação de Colunas
+      const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
 
       // Controle de Dark Mode
       const [isDark, setIsDark] = useState(false);
@@ -139,18 +143,14 @@
 
       // Inicia as preferências do Dark Mode ao carregar a página
       useEffect(() => {
-        // Busca o que o usuário escolheu na última vez
         const theme = localStorage.getItem('theme');
-        
-        // Só ativa o Dark Mode se o usuário explicitamente escolheu e salvou 'dark' antes.
-        // Se for a primeira vez acessando (theme é nulo), por padrão o app será Claro.
         if (theme === 'dark') {
           setIsDark(true);
           document.documentElement.classList.add('dark');
         } else {
           setIsDark(false);
           document.documentElement.classList.remove('dark');
-          localStorage.setItem('theme', 'light'); // Garante que o padrão salvo é claro
+          localStorage.setItem('theme', 'light');
         }
       }, []);
 
@@ -212,6 +212,21 @@
       const [isEditing, setIsEditing] = useState(null);
       const [isDropdownOpen, setIsDropdownOpen] = useState(false);
 
+      // Função para definir a ordenação
+      const handleSort = (key) => {
+        if (key === 'status') {
+          // Reseta a ordenação para o padrão alfabético
+          setSortConfig({ key: null, direction: 'asc' });
+          return;
+        }
+        
+        let direction = 'asc';
+        if (sortConfig.key === key && sortConfig.direction === 'asc') {
+          direction = 'desc';
+        }
+        setSortConfig({ key, direction });
+      };
+
       const groupedItems = useMemo(() => {
         const groups = {};
         
@@ -247,11 +262,31 @@
             const unitPrices = group.items.map(i => Number(i.unitPrice));
             group.minPrice = Math.min(...unitPrices);
             group.maxPrice = Math.max(...unitPrices);
+
+            // APLICANDO A ORDENAÇÃO INTERATIVA
+            if (sortConfig.key) {
+              group.items.sort((a, b) => {
+                let aValue = sortConfig.key === 'total' ? (Number(a.quantity) * Number(a.unitPrice)) : (a[sortConfig.key] || '');
+                let bValue = sortConfig.key === 'total' ? (Number(b.quantity) * Number(b.unitPrice)) : (b[sortConfig.key] || '');
+                
+                if (typeof aValue === 'string') aValue = aValue.toLowerCase();
+                if (typeof bValue === 'string') bValue = bValue.toLowerCase();
+                
+                if (sortConfig.key === 'unitPrice' || sortConfig.key === 'quantity') {
+                  aValue = Number(aValue);
+                  bValue = Number(bValue);
+                }
+
+                if (aValue < bValue) return sortConfig.direction === 'asc' ? -1 : 1;
+                if (aValue > bValue) return sortConfig.direction === 'asc' ? 1 : -1;
+                return 0;
+              });
+            }
           }
         });
 
         return sortedGroups;
-      }, [items, searchTerm, categoriesList]);
+      }, [items, searchTerm, categoriesList, sortConfig]);
 
       const totals = useMemo(() => {
         let spent = 0;
@@ -409,13 +444,25 @@
         }
       };
 
-      // Função para gerar o Relatório PDF nativo limpa e sem erros
+      // Função Auxiliar para Renderizar Ícones de Ordenação
+      const SortIcon = ({ columnKey }) => {
+        if (sortConfig.key === columnKey) {
+          return sortConfig.direction === 'asc' ? <ArrowUp size={14} className="ml-1 inline text-indigo-500" /> : <ArrowDown size={14} className="ml-1 inline text-indigo-500" />;
+        }
+        return <ArrowUpDown size={14} className="ml-1 inline opacity-0 group-hover:opacity-40 transition-opacity" />;
+      };
+
+      // Função segura para gerar PDF
       const handleExportPDF = () => {
         const isSpent = modalType === 'spent';
         const title = isSpent ? 'Extrato de Compras Fechadas' : 'Previsão de Orçamento';
         const itemsToExport = isSpent ? totals.spentItems : totals.budgetedItems;
         const totalValue = isSpent ? totals.spent : totals.budgeted;
-        const themeColor = isSpent ? '#16a34a' : '#d97706'; // Verde para Gastos, Laranja para Previsão
+        const themeColor = isSpent ? '#16a34a' : '#d97706'; 
+        
+        // Separação da tag de script para o Babel não quebrar a string.
+        const scriptTagStart = "<scr" + "ipt>";
+        const scriptTagEnd = "</scr" + "ipt>";
 
         const htmlContent = `
           <!DOCTYPE html>
@@ -470,14 +517,14 @@
               <span class="total-label">Valor Total:</span>
               <span class="total-value">${formatCurrency(totalValue)}</span>
             </div>
-            <script>
+            ${scriptTagStart}
               window.onload = function() {
                 setTimeout(function() {
                   window.print();
                   window.close();
                 }, 300);
               }
-            ${'<'}/script>
+            ${scriptTagEnd}
           </body>
           </html>
         `;
@@ -491,7 +538,6 @@
       if (showSplash) {
         return (
           <div className="min-h-screen flex flex-col items-center justify-center transition-colors duration-300 dark:bg-[#292D32]">
-             {/* Splash screen icon garantindo que seja redondo caso não fosse, mas esse pode ser só o padding mesmo, por ser grande */}
              <div className="neu-circle w-32 h-32 flex items-center justify-center flex-shrink-0 mb-8 animate-bounce text-indigo-500 dark:text-indigo-400">
                <GraduationCap size={72} strokeWidth={1.5} />
              </div>
@@ -540,7 +586,6 @@
             </div>
           )}
 
-          {/* Toast Ajustado para Mobile */}
           {toastMessage && (
             <div className={`fixed top-4 left-4 right-4 sm:left-auto sm:right-4 z-50 px-6 py-3 rounded-xl shadow-lg transition-all duration-300 flex items-center gap-3 font-bold text-sm
               ${toastMessage.type === 'error' ? 'bg-red-500 text-white' : 'neu-flat text-indigo-600 dark:text-indigo-400'}`}>
@@ -564,15 +609,12 @@
                   </div>
                 </div>
                 
-                {/* Botão Tema (Mobile visível aqui, esconde no desktop para por do lado). Aplicado w-12 h-12 flex items-center justify-center */}
                 <button onClick={toggleTheme} className="neu-circle w-12 h-12 flex items-center justify-center flex-shrink-0 md:hidden text-gray-500 dark:text-gray-400">
                   {isDark ? <Sun size={20} /> : <Moon size={20} />}
                 </button>
               </div>
 
-              {/* Ajuste Flex responsivo nos cartões do Topo para empilharem no telemóvel */}
               <div className="flex flex-col sm:flex-row gap-4 w-full md:w-auto">
-                {/* Botão Tema (Desktop). Aplicado w-12 h-12 flex items-center justify-center */}
                 <button onClick={toggleTheme} className="neu-circle w-12 h-12 hidden md:flex items-center justify-center flex-shrink-0 text-gray-500 dark:text-gray-400" title="Mudar Tema">
                   {isDark ? <Sun size={20} /> : <Moon size={20} />}
                 </button>
@@ -739,13 +781,31 @@
                 <table className="w-full text-left border-collapse min-w-[1100px]">
                   <thead>
                     <tr className="text-gray-600 dark:text-gray-400 uppercase text-[10px] tracking-widest" style={{ backgroundColor: 'var(--table-head)' }}>
-                      <th className="p-4 font-extrabold w-12 text-center">Status</th>
-                      <th className="p-4 font-extrabold">Fornecedor</th>
-                      <th className="p-4 font-extrabold">Localidade</th>
-                      <th className="p-4 font-extrabold">Cor Desejada</th>
-                      <th className="p-4 font-extrabold text-right">Qtd</th>
-                      <th className="p-4 font-extrabold text-right">Preço Unit.</th>
-                      <th className="p-4 font-extrabold text-right">Preço Total</th>
+                      <th 
+                        className="p-4 font-extrabold w-12 text-center cursor-pointer group hover:bg-black/5 dark:hover:bg-white/5 transition-colors select-none" 
+                        onClick={() => handleSort('status')} 
+                        title="Resetar Filtros"
+                      >
+                        Status
+                      </th>
+                      <th className="p-4 font-extrabold cursor-pointer group hover:bg-black/5 dark:hover:bg-white/5 transition-colors select-none" onClick={() => handleSort('supplier')}>
+                        Fornecedor <SortIcon columnKey="supplier" />
+                      </th>
+                      <th className="p-4 font-extrabold cursor-pointer group hover:bg-black/5 dark:hover:bg-white/5 transition-colors select-none" onClick={() => handleSort('city')}>
+                        Localidade <SortIcon columnKey="city" />
+                      </th>
+                      <th className="p-4 font-extrabold cursor-pointer group hover:bg-black/5 dark:hover:bg-white/5 transition-colors select-none" onClick={() => handleSort('color')}>
+                        Cor Desejada <SortIcon columnKey="color" />
+                      </th>
+                      <th className="p-4 font-extrabold text-right cursor-pointer group hover:bg-black/5 dark:hover:bg-white/5 transition-colors select-none" onClick={() => handleSort('quantity')}>
+                        Qtd <SortIcon columnKey="quantity" />
+                      </th>
+                      <th className="p-4 font-extrabold text-right cursor-pointer group hover:bg-black/5 dark:hover:bg-white/5 transition-colors select-none" onClick={() => handleSort('unitPrice')}>
+                        Preço Unit. <SortIcon columnKey="unitPrice" />
+                      </th>
+                      <th className="p-4 font-extrabold text-right cursor-pointer group hover:bg-black/5 dark:hover:bg-white/5 transition-colors select-none" onClick={() => handleSort('total')}>
+                        Preço Total <SortIcon columnKey="total" />
+                      </th>
                       <th className="p-4 font-extrabold text-center w-32">Análise</th>
                       <th className="p-4 font-extrabold w-48">Observações</th>
                       <th className="p-4 font-extrabold text-center w-24">Ações</th>
@@ -806,7 +866,6 @@
                               return (
                                 <tr key={item.id} className={rowClass}>
                                   <td className="p-3 text-center">
-                                    {/* Ajustado botão de marcar comprado para ser sempre um círculo fixo de w-10 h-10 */}
                                     <button onClick={() => toggleBought(item.id, item.itemName)} className={`neu-circle w-10 h-10 flex items-center justify-center flex-shrink-0 mx-auto transition-colors ${item.isBought ? 'text-green-600 dark:text-green-400 shadow-[inset_3px_3px_6px_var(--neu-shadow-d-in),inset_-3px_-3px_6px_var(--neu-shadow-l-in)]' : 'text-gray-400 hover:text-indigo-500 dark:hover:text-indigo-400'}`} title={item.isBought ? "Desmarcar" : "Marcar como Comprado"}>
                                       {item.isBought ? <CheckCircle size={20} fill="currentColor" className="text-green-500 dark:text-green-400" /> : <Circle size={20} />}
                                     </button>
@@ -862,7 +921,6 @@
             {modalType && (
               <div className="fixed inset-0 bg-gray-900 bg-opacity-60 backdrop-blur-md z-50 flex justify-center items-center p-4">
                 <div className="neu-flat p-6 w-full max-w-3xl max-h-[85vh] flex flex-col relative">
-                  {/* Ajustado botão de fechar modal para ser redondo perfeito */}
                   <button onClick={() => setModalType(null)} className="neu-circle w-10 h-10 flex items-center justify-center flex-shrink-0 absolute top-4 right-4 text-gray-600 dark:text-gray-400 hover:text-red-600 dark:hover:text-red-400 transition-colors">
                     <X size={20} strokeWidth={2.5} />
                   </button>
