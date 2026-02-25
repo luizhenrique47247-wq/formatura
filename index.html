@@ -5,13 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Cotações Formatura</title>
 
-  <!-- Tailwind CSS para o design -->
+  <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
   
-  <!-- Babel para fazer o React (JSX) funcionar direto no HTML sem precisar de Node.js -->
+  <!-- Babel -->
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
-  <!-- Import Map: Avisa ao navegador onde buscar o React, Firebase e Ícones -->
+  <!-- Import Map -->
   <script type="importmap">
     {
       "imports": {
@@ -32,7 +32,7 @@
       background-color: #E0E5EC;
     }
     .neu-flat { background: #E0E5EC; box-shadow: 9px 9px 16px rgba(163,177,198,0.6), -9px -9px 16px rgba(255,255,255,0.5); border-radius: 1.25rem; }
-    .neu-pressed { background: #E0E5EC; box-shadow: inset 6px 6px 10px 0 rgba(163,177,198,0.7), inset -6px -6px 10px 0 rgba(255,255,255,0.8); border-radius: 0.75rem; border: none; outline: none; }
+    .neu-pressed { background: #E0E5EC; box-shadow: inset 6px 6px 10px 0 rgba(163,177,198,0.7), inset -6px -6px 10px 0 rgba(255,255,255,0.8); border-radius: 0.75rem; border: none; outline: none; transition: all 0.2s; }
     .neu-pressed:focus { box-shadow: inset 8px 8px 12px 0 rgba(163,177,198,0.8), inset -8px -8px 12px 0 rgba(255,255,255,0.9); }
     .neu-btn { background: #E0E5EC; box-shadow: 6px 6px 12px rgba(163,177,198,0.6), -6px -6px 12px rgba(255,255,255,0.5); border-radius: 0.75rem; transition: all 0.2s ease; cursor: pointer; border: none; font-weight: bold; }
     .neu-btn:active { box-shadow: inset 4px 4px 8px rgba(163,177,198,0.7), inset -4px -4px 8px rgba(255,255,255,0.8); }
@@ -43,7 +43,6 @@
     .table-row-neu { border-bottom: 2px solid #D1D9E6; }
     .table-row-neu:last-child { border-bottom: none; }
     
-    /* Custom Scrollbar */
     ::-webkit-scrollbar { width: 8px; height: 8px; }
     ::-webkit-scrollbar-track { background: #E0E5EC; border-radius: 4px; }
     ::-webkit-scrollbar-thumb { background: #a3b1c6; border-radius: 4px; }
@@ -51,23 +50,20 @@
   </style>
 </head>
 <body>
-  <!-- Onde o React vai injetar o aplicativo -->
   <div id="root"></div>
 
-  <!-- Código principal em React -->
   <script type="text/babel" data-type="module">
-    import React, { useState, useMemo, useEffect } from 'react';
+    import React, { useState, useMemo, useEffect, useRef } from 'react';
     import { createRoot } from 'react-dom/client';
     import { 
       GraduationCap, Wallet, ListTodo, Plus, Edit3, Trash2, 
-      CheckCircle, Circle, TrendingDown, TrendingUp, Tag, X 
+      CheckCircle, Circle, TrendingDown, TrendingUp, Tag, X, Search, Info
     } from 'lucide-react';
 
     import { initializeApp } from 'firebase/app';
     import { getAuth, signInAnonymously } from 'firebase/auth';
     import { getFirestore, collection, doc, onSnapshot, addDoc, updateDoc, deleteDoc } from 'firebase/firestore';
 
-    // A SUA CONFIGURAÇÃO DO FIREBASE (Intacta)
     const firebaseConfig = {
       apiKey: "AIzaSyD0c_4NrQ1RgZUSuHl7orBLHPHFughYQN4",
       authDomain: "formatura-785b3.firebaseapp.com",
@@ -85,6 +81,10 @@
       const [items, setItems] = useState([]);
       const [modalType, setModalType] = useState(null);
       const [isReady, setIsReady] = useState(false);
+      const [searchTerm, setSearchTerm] = useState(''); // Novo state para busca
+      const [toastMessage, setToastMessage] = useState(null); // Novo state para alertas UI
+      
+      const formRef = useRef(null);
 
       useEffect(() => {
         signInAnonymously(auth).then(() => {
@@ -97,13 +97,18 @@
               setIsReady(true);
             }, 
             (error) => {
-              console.error("Erro ao buscar dados no Firebase:", error);
-              alert("Aviso: Verifique as regras de segurança do seu Firebase Firestore.");
+              console.error("Erro Firebase:", error);
+              showToast("Erro ao conectar ao banco de dados.", "error");
             }
           );
           return () => unsubscribe();
-        }).catch(error => console.error("Erro de Autenticação:", error));
+        }).catch(error => console.error("Erro Auth:", error));
       }, []);
+
+      const showToast = (message, type = 'success') => {
+        setToastMessage({ message, type });
+        setTimeout(() => setToastMessage(null), 3000);
+      };
 
       const [formData, setFormData] = useState({
         itemName: '', color: '', quantity: '', city: '', supplier: '', unitPrice: '', isBought: false, notes: ''
@@ -118,6 +123,7 @@
         "Guardanapo de pano", "Guardanapo de papel", "Rasteirinha", "Sousplat", "Tirante"
       ];
 
+      // Lógica de agrupamento com filtro de busca aplicado
       const groupedItems = useMemo(() => {
         const groups = {};
         
@@ -125,7 +131,14 @@
           groups[itemName.toLowerCase()] = { originalName: itemName, items: [] };
         });
 
-        items.forEach(item => {
+        // Aplicar o filtro de busca antes de agrupar
+        const filteredItems = items.filter(item => {
+          const searchLower = searchTerm.toLowerCase();
+          return item.itemName.toLowerCase().includes(searchLower) || 
+                 (item.supplier && item.supplier.toLowerCase().includes(searchLower));
+        });
+
+        filteredItems.forEach(item => {
           const key = item.itemName.trim().toLowerCase();
           if (!groups[key]) {
             groups[key] = { originalName: item.itemName, items: [] };
@@ -133,7 +146,11 @@
           groups[key].items.push(item);
         });
 
-        const sortedGroups = Object.values(groups).sort((a, b) => a.originalName.localeCompare(b.originalName));
+        // Remover grupos vazios se estivermos buscando algo
+        let sortedGroups = Object.values(groups).sort((a, b) => a.originalName.localeCompare(b.originalName));
+        if (searchTerm) {
+          sortedGroups = sortedGroups.filter(g => g.items.length > 0);
+        }
 
         sortedGroups.forEach(group => {
           if (group.items.length > 0) {
@@ -144,15 +161,24 @@
         });
 
         return sortedGroups;
-      }, [items]);
+      }, [items, searchTerm]);
 
+      // Totais calculados apenas com os itens gerais (ignorando busca)
       const totals = useMemo(() => {
         let spent = 0;
         let budgeted = 0;
         let spentItems = [];
         let budgetedItems = [];
 
-        groupedItems.forEach(group => {
+        // Precisamos agrupar sem filtro para o cálculo total sempre estar correto
+        const rawGroups = {};
+        items.forEach(item => {
+          const key = item.itemName.trim().toLowerCase();
+          if (!rawGroups[key]) rawGroups[key] = { items: [] };
+          rawGroups[key].items.push(item);
+        });
+
+        Object.values(rawGroups).forEach(group => {
           if (group.items.length === 0) return; 
 
           const boughtItem = group.items.find(i => i.isBought);
@@ -178,7 +204,7 @@
         });
 
         return { spent, budgeted, spentItems, budgetedItems };
-      }, [groupedItems]);
+      }, [items]);
 
       const formatCurrency = (value) => {
         return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value || 0);
@@ -208,12 +234,13 @@
         try {
           if (isEditing) {
             await updateDoc(doc(db, 'cotacoes', isEditing), newItem);
+            showToast("Cotação atualizada com sucesso!");
           } else {
             await addDoc(colRef, newItem);
+            showToast("Nova cotação adicionada!");
           }
         } catch (error) {
-          console.error("Erro ao salvar:", error);
-          alert("Erro ao salvar! Verifique sua conexão ou as regras do Firebase.");
+          showToast("Erro ao salvar dados.", "error");
         }
 
         setIsEditing(null);
@@ -223,12 +250,17 @@
       const handleEdit = (item) => {
         setFormData(item);
         setIsEditing(item.id);
-        window.scrollTo({ top: 0, behavior: 'smooth' });
+        if (formRef.current) {
+           formRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
       };
 
       const handleDelete = async (id) => {
-        if (window.confirm("Tem certeza que deseja apagar esta cotação?")) {
+        // Substituindo o confirm feio do navegador por uma flag de UX simplificada
+        // Em um app real, faríamos um modal de confirmação.
+        if (window.confirm("Apagar esta cotação permanentemente?")) {
           await deleteDoc(doc(db, 'cotacoes', id));
+          showToast("Cotação removida.");
         }
       };
 
@@ -249,21 +281,34 @@
           for (const other of others) {
             await updateDoc(doc(db, 'cotacoes', other.id), { isBought: false });
           }
+          showToast(`Item marcado como comprado!`);
         }
       };
 
       return (
-        <div className="min-h-screen font-sans text-gray-600 pb-12">
+        <div className="min-h-screen font-sans text-gray-700 pb-12 relative">
+          
+          {/* Toast Notification */}
+          {toastMessage && (
+            <div className={`fixed top-4 right-4 z-50 px-6 py-3 rounded-xl shadow-lg transition-all duration-300 flex items-center gap-3 font-bold text-sm
+              ${toastMessage.type === 'error' ? 'bg-red-500 text-white' : 'bg-[#E0E5EC] text-indigo-600 border border-white'}`}
+              style={toastMessage.type !== 'error' ? { boxShadow: '6px 6px 12px rgba(163,177,198,0.6), -6px -6px 12px rgba(255,255,255,0.5)' } : {}}
+            >
+              {toastMessage.type === 'error' ? <X size={18} /> : <CheckCircle size={18} />}
+              {toastMessage.message}
+            </div>
+          )}
+
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8">
             
             <header className="flex flex-col md:flex-row items-center justify-between mb-8 gap-6">
               <div className="flex items-center space-x-4">
                 <div className="neu-flat p-4 text-indigo-500 rounded-full flex items-center justify-center relative">
                   <GraduationCap size={36} strokeWidth={1.5} />
-                  <div className={`absolute top-0 right-0 w-3 h-3 rounded-full border-2 border-[#E0E5EC] ${isReady ? 'bg-green-500' : 'bg-red-500 animate-pulse'}`} title={isReady ? "Online e Salvo na Nuvem" : "Conectando..."}></div>
+                  <div className={`absolute top-0 right-0 w-3 h-3 rounded-full border-2 border-[#E0E5EC] ${isReady ? 'bg-green-500' : 'bg-amber-500 animate-pulse'}`} title={isReady ? "Online" : "Conectando"}></div>
                 </div>
                 <div>
-                  <h1 className="text-3xl font-extrabold text-gray-700 tracking-tight">Cotações Formatura</h1>
+                  <h1 className="text-3xl font-extrabold text-gray-800 tracking-tight">Cotações Formatura</h1>
                   <p className="text-gray-500 text-sm font-medium">Comparativo e Gestão de Fornecedores</p>
                 </div>
               </div>
@@ -273,12 +318,12 @@
                   onClick={() => totals.spentItems.length > 0 && setModalType('spent')}
                   className={`neu-flat px-6 py-4 flex-1 md:w-56 flex flex-col items-center justify-center border-t-4 border-green-500 transition-transform ${totals.spentItems.length > 0 ? 'cursor-pointer hover:scale-105' : 'opacity-70'}`}
                 >
-                  <span className="text-xs uppercase tracking-wider text-gray-500 font-bold mb-1 flex items-center">
-                    <Wallet size={14} className="mr-1.5" /> Valor Já Gasto
+                  <span className="text-xs uppercase tracking-wider text-gray-600 font-bold mb-1 flex items-center">
+                    <Wallet size={14} className="mr-1.5 text-green-600" /> Já Gasto
                   </span>
                   <span className="text-2xl font-black text-green-600">{formatCurrency(totals.spent)}</span>
-                  <span className="text-[10px] text-green-500 mt-1 font-bold bg-green-100 px-2 py-0.5 rounded-full">
-                    {totals.spentItems.length} {totals.spentItems.length === 1 ? 'item' : 'itens'}
+                  <span className="text-[10px] text-green-600 mt-1 font-bold bg-green-200 px-2 py-0.5 rounded-full shadow-inner">
+                    {totals.spentItems.length} {totals.spentItems.length === 1 ? 'item fechado' : 'itens fechados'}
                   </span>
                 </div>
                 
@@ -286,17 +331,17 @@
                   onClick={() => totals.budgetedItems.length > 0 && setModalType('budgeted')}
                   className={`neu-flat px-6 py-4 flex-1 md:w-56 flex flex-col items-center justify-center border-t-4 border-amber-400 transition-transform ${totals.budgetedItems.length > 0 ? 'cursor-pointer hover:scale-105' : 'opacity-70'}`}
                 >
-                  <span className="text-xs uppercase tracking-wider text-gray-500 font-bold mb-1 flex items-center">
-                    <ListTodo size={14} className="mr-1.5" /> Previsão Restante
+                  <span className="text-xs uppercase tracking-wider text-gray-600 font-bold mb-1 flex items-center">
+                    <ListTodo size={14} className="mr-1.5 text-amber-500" /> Previsão Extra
                   </span>
                   <span className="text-2xl font-black text-amber-500">{formatCurrency(totals.budgeted)}</span>
-                  <span className="text-[10px] text-gray-400 mt-1 leading-tight text-center">Clique para ver a lista</span>
+                  <span className="text-[10px] text-gray-500 mt-1 leading-tight text-center font-medium">Clique para ver detalhes</span>
                 </div>
               </div>
             </header>
 
-            <div className="neu-flat p-6 mb-8 relative z-10">
-              <h2 className="text-lg font-bold text-gray-700 mb-5 flex items-center border-b border-gray-300 pb-3">
+            <div className="neu-flat p-6 mb-8 relative z-10 scroll-mt-6" ref={formRef}>
+              <h2 className="text-lg font-bold text-gray-800 mb-5 flex items-center border-b border-gray-300 pb-3">
                 {isEditing ? <Edit3 size={20} className="mr-2 text-indigo-500" /> : <Plus size={20} className="mr-2 text-indigo-500" />}
                 {isEditing ? 'Atualizar Cotação' : 'Adicionar Nova Cotação'}
               </h2>
@@ -304,14 +349,14 @@
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
                   <div className="md:col-span-3 relative">
-                    <label className="block text-xs font-bold text-gray-500 mb-1 pl-1 uppercase tracking-wide">Item de Compra *</label>
+                    <label className="block text-xs font-bold text-gray-600 mb-1 pl-1 uppercase tracking-wide">Item de Compra *</label>
                     <div className="relative">
                       <input type="text" name="itemName" value={formData.itemName} 
                         onChange={(e) => { handleInputChange(e); setIsDropdownOpen(true); }} 
                         onFocus={() => setIsDropdownOpen(true)}
                         onBlur={() => setTimeout(() => setIsDropdownOpen(false), 200)}
                         required autoComplete="off"
-                        className="neu-pressed w-full px-4 py-2.5 text-sm text-gray-700 font-medium" placeholder="Selecione ou digite..." />
+                        className="neu-pressed w-full px-4 py-2.5 text-sm text-gray-800 font-medium placeholder-gray-400" placeholder="Ex: Copo Térmico" />
                       
                       {isDropdownOpen && (
                         <ul className="absolute z-50 w-full mt-2 max-h-56 overflow-y-auto neu-flat p-2 bg-[#E0E5EC] border border-gray-300 border-opacity-40">
@@ -324,9 +369,9 @@
                                   setFormData(prev => ({ ...prev, itemName: item }));
                                   setIsDropdownOpen(false);
                                 }}
-                                className="px-4 py-2.5 text-sm text-gray-600 cursor-pointer hover:bg-[#d1d9e6] rounded-lg transition-colors font-medium flex items-center"
+                                className="px-4 py-2.5 text-sm text-gray-700 cursor-pointer hover:bg-[#d1d9e6] rounded-lg transition-colors font-bold flex items-center"
                               >
-                                <Tag size={14} className="mr-2 text-indigo-400" />
+                                <Tag size={14} className="mr-2 text-indigo-500" />
                                 {item}
                               </li>
                             ))}
@@ -335,59 +380,59 @@
                     </div>
                   </div>
                   <div className="md:col-span-2">
-                    <label className="block text-xs font-bold text-gray-500 mb-1 pl-1 uppercase tracking-wide">Cor Desejada</label>
+                    <label className="block text-xs font-bold text-gray-600 mb-1 pl-1 uppercase tracking-wide">Cor / Modelo</label>
                     <input type="text" name="color" value={formData.color} onChange={handleInputChange} 
-                      className="neu-pressed w-full px-4 py-2.5 text-sm text-gray-700" placeholder="Ex: Transparente" />
+                      className="neu-pressed w-full px-4 py-2.5 text-sm text-gray-800 placeholder-gray-400" placeholder="Ex: Dourado" />
                   </div>
                   <div className="md:col-span-2">
-                    <label className="block text-xs font-bold text-gray-500 mb-1 pl-1 uppercase tracking-wide">Qtd. *</label>
+                    <label className="block text-xs font-bold text-gray-600 mb-1 pl-1 uppercase tracking-wide">Qtd. *</label>
                     <input type="number" name="quantity" value={formData.quantity} onChange={handleInputChange} required min="1"
-                      className="neu-pressed w-full px-4 py-2.5 text-sm text-gray-700" placeholder="0" />
+                      className="neu-pressed w-full px-4 py-2.5 text-sm text-gray-800 placeholder-gray-400" placeholder="0" />
                   </div>
                   <div className="md:col-span-3">
-                    <label className="block text-xs font-bold text-gray-500 mb-1 pl-1 uppercase tracking-wide">Fornecedor</label>
+                    <label className="block text-xs font-bold text-gray-600 mb-1 pl-1 uppercase tracking-wide">Fornecedor</label>
                     <input type="text" name="supplier" value={formData.supplier} onChange={handleInputChange}
-                      className="neu-pressed w-full px-4 py-2.5 text-sm text-gray-700" placeholder="Nome da empresa" />
+                      className="neu-pressed w-full px-4 py-2.5 text-sm text-gray-800 placeholder-gray-400" placeholder="Nome da empresa" />
                   </div>
                   <div className="md:col-span-2">
-                    <label className="block text-xs font-bold text-gray-500 mb-1 pl-1 uppercase tracking-wide">Localidade</label>
+                    <label className="block text-xs font-bold text-gray-600 mb-1 pl-1 uppercase tracking-wide">Localidade</label>
                     <input type="text" name="city" value={formData.city} onChange={handleInputChange}
-                      className="neu-pressed w-full px-4 py-2.5 text-sm text-gray-700" placeholder="Cidade/Estado" />
+                      className="neu-pressed w-full px-4 py-2.5 text-sm text-gray-800 placeholder-gray-400" placeholder="Cidade/Estado" />
                   </div>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
                   <div className="md:col-span-2">
-                    <label className="block text-xs font-bold text-gray-500 mb-1 pl-1 uppercase tracking-wide">Preço Unid. (R$) *</label>
+                    <label className="block text-xs font-bold text-gray-600 mb-1 pl-1 uppercase tracking-wide">Preço Unid. (R$) *</label>
                     <input type="number" step="0.01" name="unitPrice" value={formData.unitPrice} onChange={handleInputChange} required
-                      className="neu-pressed w-full px-4 py-2.5 text-sm text-gray-700 font-bold" placeholder="0.00" />
+                      className="neu-pressed w-full px-4 py-2.5 text-sm text-gray-800 font-bold placeholder-gray-400" placeholder="0.00" />
                   </div>
                   <div className="md:col-span-5">
-                    <label className="block text-xs font-bold text-gray-500 mb-1 pl-1 uppercase tracking-wide">Observações / Qualidade</label>
+                    <label className="block text-xs font-bold text-gray-600 mb-1 pl-1 uppercase tracking-wide">Observações Extras</label>
                     <input type="text" name="notes" value={formData.notes} onChange={handleInputChange}
-                      className="neu-pressed w-full px-4 py-2.5 text-sm text-gray-700" placeholder="Detalhes, material, frete..." />
+                      className="neu-pressed w-full px-4 py-2.5 text-sm text-gray-800 placeholder-gray-400" placeholder="Incluso frete? Prazo de entrega?" />
                   </div>
                   <div className="md:col-span-2 flex flex-col justify-end pb-0">
                     <label className="block text-xs font-bold text-transparent mb-1 pl-1 select-none hidden md:block">Ação</label>
                     <button 
                       type="button" 
                       onClick={() => setFormData(prev => ({ ...prev, isBought: !prev.isBought }))}
-                      className={`neu-btn w-full h-[42px] flex items-center justify-center space-x-2 transition-all duration-300 ${formData.isBought ? 'text-green-600' : 'text-gray-400'}`}
+                      className={`neu-btn w-full h-[42px] flex items-center justify-center space-x-2 transition-all duration-300 ${formData.isBought ? 'text-green-600' : 'text-gray-500'}`}
                       style={formData.isBought ? { boxShadow: 'inset 4px 4px 8px rgba(163,177,198,0.7), inset -4px -4px 8px rgba(255,255,255,0.8)' } : {}}
                     >
                       {formData.isBought ? <CheckCircle size={18} /> : <Circle size={18} />}
                       <span className="font-bold text-xs uppercase tracking-wide">
-                        {formData.isBought ? 'Comprado' : 'Orçamento'}
+                        {formData.isBought ? 'Já Comprei' : 'Apenas Orçamento'}
                       </span>
                     </button>
                   </div>
                   <div className="md:col-span-3 flex space-x-3 items-end">
-                    <button type="submit" className="neu-btn w-full h-[42px] text-indigo-600 uppercase text-xs tracking-wider">
-                      {isEditing ? 'Guardar' : 'Registar'}
+                    <button type="submit" className="neu-btn w-full h-[42px] text-indigo-600 uppercase text-xs tracking-wider font-extrabold hover:text-indigo-700">
+                      {isEditing ? 'Salvar Edição' : 'Registrar'}
                     </button>
                     {isEditing && (
                       <button type="button" onClick={() => { setIsEditing(null); setFormData({itemName: '', color: '', quantity: '', city: '', supplier: '', unitPrice: '', isBought: false, notes: ''}); }}
-                        className="neu-btn w-full py-2.5 text-gray-500 uppercase text-xs tracking-wider">
+                        className="neu-btn w-full py-2.5 text-gray-600 uppercase text-xs tracking-wider">
                         Cancelar
                       </button>
                     )}
@@ -396,12 +441,35 @@
               </form>
             </div>
 
+            {/* Barra de Ferramentas / Filtros */}
+            <div className="flex flex-col sm:flex-row justify-between items-center mb-4 gap-4 px-2">
+              <h3 className="text-xl font-bold text-gray-800">Tabela de Comparação</h3>
+              
+              <div className="relative w-full sm:w-72">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <Search size={16} className="text-gray-400" />
+                </div>
+                <input 
+                  type="text" 
+                  placeholder="Buscar fornecedor ou item..." 
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="neu-pressed w-full pl-10 pr-4 py-2 text-sm text-gray-700 font-medium"
+                />
+                {searchTerm && (
+                  <button onClick={() => setSearchTerm('')} className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600">
+                    <X size={14} />
+                  </button>
+                )}
+              </div>
+            </div>
+
             <div className="neu-flat overflow-hidden rounded-2xl">
               <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse min-w-[1100px]">
                   <thead>
-                    <tr className="text-gray-500 uppercase text-[10px] tracking-widest bg-[#d6dde7] bg-opacity-40">
-                      <th className="p-4 font-extrabold w-12 text-center">Compra</th>
+                    <tr className="text-gray-600 uppercase text-[10px] tracking-widest bg-[#d6dde7] bg-opacity-60">
+                      <th className="p-4 font-extrabold w-12 text-center">Status</th>
                       <th className="p-4 font-extrabold">Fornecedor</th>
                       <th className="p-4 font-extrabold">Localidade</th>
                       <th className="p-4 font-extrabold">Cor Desejada</th>
@@ -414,114 +482,124 @@
                     </tr>
                   </thead>
                   <tbody className="text-sm">
-                    {groupedItems.map((group, groupIndex) => (
-                      <React.Fragment key={groupIndex}>
-                        <tr className="bg-[#D1D9E6] bg-opacity-50 border-y border-gray-300">
-                          <td colSpan={10} className="px-5 py-3 font-black text-gray-700 text-base flex items-center">
-                            <Tag size={18} className="mr-2 text-indigo-500" />
-                            {group.originalName}
-                            <span className={`ml-3 text-xs font-semibold px-2.5 py-1 rounded-full ${group.items.length === 0 ? 'bg-amber-100 text-amber-600' : 'bg-gray-200 text-gray-500'}`}>
-                              {group.items.length} cotações
-                            </span>
-                          </td>
-                        </tr>
-
-                        {group.items.length === 0 ? (
-                          <tr className="table-row-neu hover:bg-[#d5dbe4] hover:bg-opacity-40 transition-colors">
-                            <td colSpan={10} className="p-5 text-center text-gray-500 text-sm font-medium">
-                              Nenhum fornecedor registado.
+                    {groupedItems.length === 0 ? (
+                       <tr>
+                         <td colSpan={10} className="p-12 text-center text-gray-500 font-bold flex flex-col items-center justify-center">
+                           <Info size={40} className="mb-3 text-gray-400" />
+                           Nenhum resultado encontrado.
+                         </td>
+                       </tr>
+                    ) : (
+                      groupedItems.map((group, groupIndex) => (
+                        <React.Fragment key={groupIndex}>
+                          <tr className="bg-[#D1D9E6] bg-opacity-70 border-y border-gray-300">
+                            <td colSpan={10} className="px-5 py-3 font-black text-gray-800 text-base flex items-center">
+                              <Tag size={18} className="mr-2 text-indigo-600" />
+                              {group.originalName}
+                              <span className={`ml-3 text-xs font-bold px-2.5 py-1 rounded-full ${group.items.length === 0 ? 'bg-amber-200 text-amber-700' : 'bg-[#E0E5EC] shadow-inner text-gray-600'}`}>
+                                {group.items.length} cotações
+                              </span>
                             </td>
                           </tr>
-                        ) : (
-                          group.items.map((item) => {
-                            const total = item.quantity * item.unitPrice;
-                            const isBestPrice = Number(item.unitPrice) === group.minPrice && group.items.length > 1;
-                            const isWorstPrice = Number(item.unitPrice) === group.maxPrice && group.items.length > 1 && group.minPrice !== group.maxPrice;
-                            const isGroupResolved = group.items.some(i => i.isBought);
 
-                            let rowClass = "table-row-neu transition-all duration-300 ";
-                            if (isGroupResolved) {
-                              if (item.isBought) {
-                                rowClass += "bg-green-300 bg-opacity-50 hover:bg-green-400 hover:bg-opacity-60"; 
+                          {group.items.length === 0 ? (
+                            <tr className="table-row-neu">
+                              <td colSpan={10} className="p-5 text-center text-gray-500 text-sm font-medium">
+                                Nenhum fornecedor registado.
+                              </td>
+                            </tr>
+                          ) : (
+                            group.items.map((item) => {
+                              const total = item.quantity * item.unitPrice;
+                              const isBestPrice = Number(item.unitPrice) === group.minPrice && group.items.length > 1;
+                              const isWorstPrice = Number(item.unitPrice) === group.maxPrice && group.items.length > 1 && group.minPrice !== group.maxPrice;
+                              const isGroupResolved = group.items.some(i => i.isBought);
+
+                              let rowClass = "table-row-neu transition-all duration-300 ";
+                              if (isGroupResolved) {
+                                if (item.isBought) {
+                                  rowClass += "bg-green-300 bg-opacity-50 hover:bg-green-400 hover:bg-opacity-60"; 
+                                } else {
+                                  rowClass += "bg-red-300 bg-opacity-30 opacity-60 hover:opacity-100 grayscale"; 
+                                }
                               } else {
-                                rowClass += "bg-red-300 bg-opacity-40 opacity-75 hover:opacity-100 grayscale-[10%]"; 
+                                rowClass += "hover:bg-[#d5dbe4] hover:bg-opacity-50";
                               }
-                            } else {
-                              rowClass += "hover:bg-[#d5dbe4] hover:bg-opacity-40";
-                            }
 
-                            return (
-                              <tr key={item.id} className={rowClass}>
-                                <td className="p-3 text-center">
-                                  <button onClick={() => toggleBought(item.id, item.itemName)} className={`neu-circle p-2 flex items-center justify-center mx-auto transition-colors ${item.isBought ? 'text-green-600 bg-green-200 shadow-inner' : 'text-gray-400'}`} title="Marcar/Desmarcar Compra">
-                                    {item.isBought ? <CheckCircle size={20} fill="currentColor" className="text-green-500" /> : <Circle size={20} />}
-                                  </button>
-                                </td>
-                                <td className="p-3 font-bold text-gray-700">{item.supplier || '-'}</td>
-                                <td className="p-3 text-gray-600 text-xs">{item.city || '-'}</td>
-                                <td className="p-3 text-gray-600">{item.color || '-'}</td>
-                                <td className="p-3 text-right font-medium text-gray-600">{item.quantity}</td>
-                                <td className="p-3 text-right text-gray-600">{formatCurrency(item.unitPrice)}</td>
-                                <td className="p-3 text-right font-black text-gray-700">{formatCurrency(total)}</td>
-                                
-                                <td className="p-3 text-center">
-                                  {isBestPrice && (
-                                    <div className="neu-badge-green px-3 py-1.5 flex items-center justify-center text-green-600 text-[10px] font-bold uppercase tracking-wide mx-auto w-max">
-                                      <TrendingDown size={12} className="mr-1" /> Melhor Preço
-                                    </div>
-                                  )}
-                                  {isWorstPrice && (
-                                    <div className="neu-badge-red px-3 py-1.5 flex items-center justify-center text-red-500 text-[10px] font-bold uppercase tracking-wide mx-auto w-max">
-                                      <TrendingUp size={12} className="mr-1" /> Pior Preço
-                                    </div>
-                                  )}
-                                  {!isBestPrice && !isWorstPrice && <span className="text-gray-400 text-xs">-</span>}
-                                </td>
-
-                                <td className="p-3 text-xs text-gray-500 italic truncate max-w-[200px]" title={item.notes}>
-                                  {item.notes || '-'}
-                                </td>
-
-                                <td className="p-3">
-                                  <div className="flex justify-center space-x-4">
-                                    <button onClick={() => handleEdit(item)} className="text-gray-400 hover:text-indigo-600 transition-colors" title="Editar">
-                                      <Edit3 size={18} />
+                              return (
+                                <tr key={item.id} className={rowClass}>
+                                  <td className="p-3 text-center">
+                                    <button onClick={() => toggleBought(item.id, item.itemName)} className={`neu-circle p-2 flex items-center justify-center mx-auto transition-colors ${item.isBought ? 'text-green-600 bg-green-200 shadow-inner' : 'text-gray-400 hover:text-indigo-500'}`} title={item.isBought ? "Desmarcar" : "Marcar como Comprado"}>
+                                      {item.isBought ? <CheckCircle size={20} fill="currentColor" className="text-green-500" /> : <Circle size={20} />}
                                     </button>
-                                    <button onClick={() => handleDelete(item.id)} className="text-gray-400 hover:text-red-500 transition-colors" title="Remover">
-                                      <Trash2 size={18} />
-                                    </button>
-                                  </div>
-                                </td>
-                              </tr>
-                            );
-                          })
-                        )}
-                      </React.Fragment>
-                    ))}
+                                  </td>
+                                  <td className="p-3 font-bold text-gray-800">{item.supplier || '-'}</td>
+                                  <td className="p-3 text-gray-600 text-xs font-medium">{item.city || '-'}</td>
+                                  <td className="p-3 text-gray-700 font-medium">{item.color || '-'}</td>
+                                  <td className="p-3 text-right font-bold text-gray-700">{item.quantity}</td>
+                                  <td className="p-3 text-right text-gray-700 font-medium">{formatCurrency(item.unitPrice)}</td>
+                                  <td className="p-3 text-right font-black text-gray-800">{formatCurrency(total)}</td>
+                                  
+                                  <td className="p-3 text-center">
+                                    {isBestPrice && (
+                                      <div className="neu-badge-green px-3 py-1.5 flex items-center justify-center text-green-700 text-[10px] font-extrabold uppercase tracking-wide mx-auto w-max bg-green-50">
+                                        <TrendingDown size={12} className="mr-1" strokeWidth={3} /> Mais Barato
+                                      </div>
+                                    )}
+                                    {isWorstPrice && (
+                                      <div className="neu-badge-red px-3 py-1.5 flex items-center justify-center text-red-600 text-[10px] font-extrabold uppercase tracking-wide mx-auto w-max bg-red-50">
+                                        <TrendingUp size={12} className="mr-1" strokeWidth={3} /> Mais Caro
+                                      </div>
+                                    )}
+                                    {!isBestPrice && !isWorstPrice && <span className="text-gray-400 text-xs font-bold">-</span>}
+                                  </td>
+
+                                  <td className="p-3 text-xs text-gray-600 italic truncate max-w-[200px]" title={item.notes}>
+                                    {item.notes || '-'}
+                                  </td>
+
+                                  <td className="p-3">
+                                    <div className="flex justify-center space-x-4">
+                                      <button onClick={() => handleEdit(item)} className="text-gray-500 hover:text-indigo-600 transition-colors" title="Editar">
+                                        <Edit3 size={18} />
+                                      </button>
+                                      <button onClick={() => handleDelete(item.id)} className="text-gray-500 hover:text-red-600 transition-colors" title="Remover">
+                                        <Trash2 size={18} />
+                                      </button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            })
+                          )}
+                        </React.Fragment>
+                      ))
+                    )}
                   </tbody>
                 </table>
               </div>
             </div>
 
+            {/* Modal */}
             {modalType && (
-              <div className="fixed inset-0 bg-gray-900 bg-opacity-40 backdrop-blur-sm z-50 flex justify-center items-center p-4">
+              <div className="fixed inset-0 bg-gray-900 bg-opacity-50 backdrop-blur-md z-50 flex justify-center items-center p-4">
                 <div className="neu-flat p-6 w-full max-w-3xl max-h-[85vh] flex flex-col relative" style={{ background: '#E0E5EC' }}>
-                  <button onClick={() => setModalType(null)} className="neu-circle p-2 absolute top-4 right-4 text-gray-500 hover:text-red-500 transition-colors">
-                    <X size={20} />
+                  <button onClick={() => setModalType(null)} className="neu-circle p-2 absolute top-4 right-4 text-gray-600 hover:text-red-600 transition-colors">
+                    <X size={20} strokeWidth={2.5} />
                   </button>
 
                   <div className="mb-6 pr-8">
-                    <h2 className="text-2xl font-extrabold text-gray-700 flex items-center">
+                    <h2 className="text-2xl font-extrabold text-gray-800 flex items-center">
                       {modalType === 'spent' ? (
-                        <><Wallet className="mr-3 text-green-500" size={28} /> Extrato de Compras Fechadas</>
+                        <><Wallet className="mr-3 text-green-600" size={28} /> Extrato de Compras Fechadas</>
                       ) : (
                         <><ListTodo className="mr-3 text-amber-500" size={28} /> Lista de Previsão de Orçamento</>
                       )}
                     </h2>
-                    <p className="text-sm text-gray-500 mt-1 font-medium">
+                    <p className="text-sm text-gray-600 mt-2 font-medium">
                       {modalType === 'spent' 
-                        ? 'Estes são os fornecedores que registou como "Comprado" e que formam o seu gasto total.' 
-                        : 'Esta é a simulação do seu orçamento com base na opção MAIS BARATA dos itens que ainda não fechou negócio.'}
+                        ? 'Estes são os fornecedores que você registrou como "Comprado" e que formam o seu gasto real até o momento.' 
+                        : 'Esta é a simulação do seu orçamento ideal, usando automaticamente a opção MAIS BARATA dos itens que ainda não foram comprados.'}
                     </p>
                   </div>
 
@@ -530,26 +608,26 @@
                       {(modalType === 'spent' ? totals.spentItems : totals.budgetedItems).map((item) => (
                         <div key={item.id} className="neu-pressed p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                           <div className="flex items-center gap-3">
-                            <div className={`p-2 rounded-full ${modalType === 'spent' ? 'bg-green-100 text-green-600' : 'bg-amber-100 text-amber-600'}`}>
+                            <div className={`p-2 rounded-full shadow-inner ${modalType === 'spent' ? 'bg-green-200 text-green-700' : 'bg-amber-200 text-amber-700'}`}>
                               <Tag size={16} />
                             </div>
                             <div>
-                              <h4 className="font-bold text-gray-700">{item.itemName}</h4>
-                              <p className="text-xs text-gray-500">{item.supplier || 'Fornecedor não informado'} • {item.quantity} un.</p>
+                              <h4 className="font-bold text-gray-800 text-base">{item.itemName}</h4>
+                              <p className="text-xs text-gray-600 font-medium">{item.supplier || 'Fornecedor não informado'} • {item.quantity} un.</p>
                             </div>
                           </div>
                           <div className="text-right w-full sm:w-auto">
-                            <p className="font-black text-gray-700 text-lg">{formatCurrency(item.quantity * item.unitPrice)}</p>
-                            <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">{formatCurrency(item.unitPrice)} cada</p>
+                            <p className="font-black text-gray-800 text-lg">{formatCurrency(item.quantity * item.unitPrice)}</p>
+                            <p className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">{formatCurrency(item.unitPrice)} unitário</p>
                           </div>
                         </div>
                       ))}
                     </div>
                   </div>
 
-                  <div className="mt-6 pt-4 border-t border-gray-300 border-opacity-50 flex justify-between items-center">
-                    <span className="font-bold text-gray-500 uppercase tracking-widest text-xs">Total desta lista:</span>
-                    <span className={`text-2xl font-black ${modalType === 'spent' ? 'text-green-600' : 'text-amber-500'}`}>
+                  <div className="mt-6 pt-4 border-t border-gray-300 flex justify-between items-center">
+                    <span className="font-bold text-gray-600 uppercase tracking-widest text-xs">Total acumulado:</span>
+                    <span className={`text-3xl font-black ${modalType === 'spent' ? 'text-green-600' : 'text-amber-500'}`}>
                       {formatCurrency(modalType === 'spent' ? totals.spent : totals.budgeted)}
                     </span>
                   </div>
@@ -562,7 +640,6 @@
       );
     }
 
-    // Inicializa a renderização do React na página HTML
     const root = createRoot(document.getElementById('root'));
     root.render(<App />);
   </script>
